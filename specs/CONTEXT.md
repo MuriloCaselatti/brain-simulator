@@ -7,7 +7,7 @@
 ## Status Atual
 **Fase:** 1 — Core (em progresso)
 **Próxima sessão:** SPEC-003 (LIF + STDP + Learning Engine)
-**Última atualização:** 2026-06-11
+**Última atualização:** 2026-06-11 (SPEC-004 implementado fora de ordem — ver nota abaixo)
 
 ---
 
@@ -57,8 +57,47 @@
     100ms com 3 módulos mock, StateRenderer não bloqueante, pause/resume,
     reset) — **100% pass** (34/34 com SPEC-001).
 
+- **SPEC-004 — Memória (concluído 2026-06-11, fora de ordem)**
+  - `modules/memory/working.py`: `WorkingMemory` — rede recorrente de
+    `N_ATTRACTORS = 7` pools mutuamente inibitórios (winner-take-all),
+    cada um biestável (`gain=8`, `threshold=4`, dinâmica leaky com
+    `tau_ms=20`). Um cue que sobrepõe fortemente um pool empurra seu
+    `level` escalar para o ponto fixo alto (~0.98); sem input, o
+    fixed-point alto é estável e o padrão persiste (testado por 500ms
+    sem input).
+  - `modules/memory/episodic.py`: `EpisodicMemory` — **Modern Hopfield
+    Network** (Ramsauer et al. 2020), *não* o Hopfield clássico de 1982.
+    Update `xi_new = X^T softmax(beta * X xi)` em `n_iters=1` passo,
+    `beta=8.0`. Recupera padrões bipolares de dim 100 com 30% de ruído
+    em uma única iteração (capacidade exponencial). FIFO em
+    `max_patterns`.
+  - `modules/memory/semantic.py`: `SemanticMemory` — grafo de conceitos
+    (NetworkX) + embeddings via `sentence-transformers`
+    (`all-MiniLM-L6-v2`, lazy-load com cache em nível de módulo);
+    fallback determinístico por hashing se o modelo não puder ser
+    carregado (offline/sem GPU). `query()` retorna top-k por similaridade
+    de cosseno; `add_relation()` cria arestas tipadas/ponderadas
+    consumidas por `get_synaptic_targets()`.
+  - Todos os 3 módulos implementam `CognitiveModule` ABC (SPEC-001)
+    sem alterações na interface congelada.
+  - `tests/unit/test_memory.py`: 18 testes novos (contrato
+    `CognitiveModule` para os 3 módulos, persistência de 500ms na
+    WorkingMemory, recuperação com 30% de ruído na EpisodicMemory,
+    busca top-5 e relações na SemanticMemory) — **100% pass** (52/52
+    no total).
+  - Dependência nova instalada: `sentence-transformers` (já listada em
+    `requirements.txt`); upgrade incidental de `numpy` 2.4.6 → 2.2.6
+    (ainda numpy 2.x, compatível com torch 2.9 — sem impacto nos testes
+    existentes).
+  - **Nota:** SPEC-004 declarava depender de SPEC-003, mas foi
+    implementado a pedido do usuário antes do SPEC-003. Os 3 módulos de
+    memória não dependem de `core/neuron.py`/`core/synapse.py` (ainda
+    inexistentes) — operam em `numpy` puro sobre o contrato
+    `CognitiveModule`. Quando o SPEC-003 for implementado, validar a
+    integração via `SimulationEngine.add_module()`.
+
 ## O que está em progresso
-- Nada em progresso (SPEC-002 fechado; aguardando início do SPEC-003)
+- Nada em progresso (SPEC-002 e SPEC-004 fechados; aguardando início do SPEC-003)
 
 ## O que vem a seguir
 1. **SPEC-003:** `core/neuron.py` (LIF vetorizado, Brian2), `core/synapse.py`
@@ -66,6 +105,8 @@
    Implementar como `CognitiveModule`s plugados no `SimulationEngine` via
    `add_module()` — **não alterar `core/interfaces.py` nem
    `core/brain_bus.py`/`core/simulation_engine.py` sem necessidade**.
+   Após SPEC-003, validar integração dos módulos de memória (SPEC-004)
+   no `SimulationEngine`.
 
 ---
 
@@ -121,9 +162,14 @@ dt=1ms, StateRenderer não bloqueante, pause/resume/reset). 21 testes novos,
 **Notas:** —
 
 ### SPEC-004 — Memória
-**Status:** ⏳ Aguarda SPEC-001, 003
+**Status:** ✅ Concluído (2026-06-11, fora de ordem — ver nota em "O que foi feito")
 **Branch:** —
-**Notas:** Estudar Modern Hopfield Networks (Ramsauer 2020) antes
+**Notas:** `WorkingMemory` (7 atratores biestáveis), `EpisodicMemory`
+(Modern Hopfield Network, Ramsauer 2020 — recupera padrões com 30% de
+ruído), `SemanticMemory` (sentence-transformers + NetworkX, com fallback
+de hashing offline). 18 testes novos em `tests/unit/test_memory.py`,
+52/52 no total. Integração com `SimulationEngine`/SPEC-003 ainda não
+validada.
 
 ### SPEC-005 — Atenção
 **Status:** ⏳ Aguarda SPEC-001, 002
