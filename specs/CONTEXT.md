@@ -6,7 +6,7 @@
 
 ## Status Atual
 **Fase:** 1 — Core (em progresso)
-**Próxima sessão:** SPEC-002 (BrainBus + SimulationEngine)
+**Próxima sessão:** SPEC-003 (LIF + STDP + Learning Engine)
 **Última atualização:** 2026-06-11
 
 ---
@@ -27,14 +27,45 @@
   - `tests/unit/test_interfaces.py`: 13 testes de contrato (inclui rejeição de
     instanciação da ABC e de implementação incompleta) — **100% pass**.
   - **Interface `CognitiveModule` CONGELADA na v1.0.0** (ver ADR-008).
+- **SPEC-002 — BrainBus + SimulationEngine (concluído 2026-06-11)**
+  - `core/brain_bus.py`: `BrainBus` síncrono com `BusEvent`/`BusSnapshot`.
+    `publish()` notifica subscribers (`subscribe(event_type, handler)`,
+    incluindo `"*"` wildcard) sincronamente; `publish_state()` registra o
+    `ModuleState` de cada módulo no tick atual; `tick(timestamp_ms)` fecha o
+    timestep, arquiva o snapshot num `deque(maxlen=10_000)` (StateBuffer —
+    10s de replay a dt=1ms) e limpa os buffers pendentes; `get_history(n)`
+    retorna os últimos `n` snapshots (oldest-first).
+  - `core/simulation_engine.py`: `SimulationEngine` com clock global
+    `dt = 1.0ms`. `add_module(module, depends_on=[...])` registra módulos e
+    dependências; `execution_order` calcula ordem topológica via Kahn
+    (desempate pela ordem de inserção, preservando a cadeia padrão
+    Sensory → Attention → Memory → ... → LearningEngine). `step()` executa
+    cada módulo na ordem topológica, monta `ModuleInputs` a partir das
+    saídas (`spike_trains` concatenados, `attention_signal` propagado via
+    `internal_state["attention_signal"]`) publicadas pelas dependências
+    *no mesmo tick*, publica `ModuleOutputs`/`ModuleState` no BrainBus e
+    fecha o tick. `register_state_renderer(callback)` registra callbacks de
+    StateRenderer notificados após cada tick — exceções são engolidas e
+    **não bloqueiam o clock**. `run(duration_ms)`, `pause()`/`resume()`,
+    `reset()` (reseta módulos, zera o clock e limpa o histórico do bus) e
+    `get_history(n_steps)` (delegando ao BrainBus) completam a API.
+  - `core/__init__.py`: reexporta `BrainBus`, `BusEvent`, `BusSnapshot`,
+    `SimulationEngine`.
+  - `tests/unit/test_engine.py`: 21 testes (BrainBus pub/sub/tick/history,
+    StateBuffer com limite de 10.000 passos, ordenação topológica e detecção
+    de ciclos, causalidade síncrona dentro do tick, cenário de aceitação de
+    100ms com 3 módulos mock, StateRenderer não bloqueante, pause/resume,
+    reset) — **100% pass** (34/34 com SPEC-001).
 
 ## O que está em progresso
-- Nada em progresso (SPEC-001 fechado; aguardando início do SPEC-002)
+- Nada em progresso (SPEC-002 fechado; aguardando início do SPEC-003)
 
 ## O que vem a seguir
-1. **SPEC-002:** `core/brain_bus.py` (implementação real) + `core/simulation_engine.py`
-   + `tests/unit/test_engine.py`. Implementar contra o contrato congelado em
-   `core/interfaces.py` — **não alterar a interface**.
+1. **SPEC-003:** `core/neuron.py` (LIF vetorizado, Brian2), `core/synapse.py`
+   (STDP), `core/learning_engine.py` (TD-Learning + PlasticityScheduler).
+   Implementar como `CognitiveModule`s plugados no `SimulationEngine` via
+   `add_module()` — **não alterar `core/interfaces.py` nem
+   `core/brain_bus.py`/`core/simulation_engine.py` sem necessidade**.
 
 ---
 
@@ -77,13 +108,15 @@
 de contrato passam. Apenas stdlib + numpy em `core/interfaces.py`.
 
 ### SPEC-002 — BrainBus + SimulationEngine
-**Status:** 🔜 Próxima (SPEC-001 concluído)
+**Status:** ✅ Concluído (2026-06-11)
 **Branch:** —
-**Notas:** Implementar `BrainBus` real sobre o stub existente. Definir
-`BusEvent`/`BusSnapshot` aqui — não tocar em `core/interfaces.py`.
+**Notas:** `BrainBus` síncrono (`BusEvent`/`BusSnapshot`, StateBuffer
+`deque(maxlen=10_000)`) + `SimulationEngine` (Kahn topológico, TimeLoop
+dt=1ms, StateRenderer não bloqueante, pause/resume/reset). 21 testes novos,
+34/34 no total. `core/interfaces.py` não foi alterado.
 
 ### SPEC-003 — LIF + STDP + Learning
-**Status:** ⏳ Aguarda SPEC-001
+**Status:** 🔜 Próxima (SPEC-002 concluído)
 **Branch:** —
 **Notas:** —
 
