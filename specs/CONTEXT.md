@@ -5,9 +5,9 @@
 ---
 
 ## Status Atual
-**Fase:** 1 — Core (em progresso)
-**Próxima sessão:** SPEC-009 (Visualização Three.js)
-**Última atualização:** 2026-06-11 (SPEC-008 concluído)
+**Fase:** 4 — Visualização (em progresso)
+**Próxima sessão:** SPEC-010 (Dashboard Científico) ou SPEC-012 (Instrumentação)
+**Última atualização:** 2026-06-11 (SPEC-009 concluído)
 
 ---
 
@@ -350,13 +350,60 @@
     `core/simulation_engine.py` recebeu mudanças **aditivas** (sem quebrar
     APIs existentes).
 
+- **SPEC-009 — Visualização Three.js (concluído 2026-06-11)**
+  - `visualization/server.py`: FastAPI + WebSocket. `SimulationRunner` roda o
+    `SimulationEngine` num **thread daemon** ("sim-clock"), paceado por
+    `speed` (1 sim-ms por `1/speed` wall-ms). O StateRenderer registrado via
+    `engine.register_state_renderer()` **não bloqueia o clock**: o callback
+    `_on_snapshot` só serializa um resumo pequeno (mean/max firing rate por
+    região, voltagem média, flag de spike) sob lock, *throttled* a 30fps; o
+    engine já engole exceções de renderer. Um `_broadcast_loop` async lê o
+    último frame ~30×/s e faz push para todos os WebSockets. Comandos do
+    browser (`play`/`pause`/`step`/`speed`/`isolate`/`clear_isolate`/`reset`)
+    chegam pelo mesmo socket e são aplicados via `handle_command` (flags
+    atômicas + lock para o set `isolated`). `serialize_layout`/`serialize_frame`
+    são JSON-safe (sem escalares numpy vazando). Endpoints: `GET /` (index),
+    `GET /api/layout`, `WS /ws`, `/static`. Rodar: `python -m visualization.server`.
+  - `visualization/demo_brain.py`: `DemoRegion(CognitiveModule)` — população
+    rate-based leve (Poisson não-homogêneo, oscilação intrínseca + drive
+    proporcional à fração de aferentes ativos; NA escala excitabilidade, ACh
+    o ganho de drive atendido). `build_demo_brain()` monta as **8 regiões**
+    anatômicas do BLUEPRINT §11 num **DAG** (`EXECUTION_DEPENDENCIES`, sem
+    ciclos para o Kahn) + um `NeuromodulatorSystem` (registrado como fonte via
+    `register_neuromodulator`, anima o halo de dopamina e propaga NA/ACh).
+    `REGION_LAYOUT` (pos/cor/raio) e `REGION_CONNECTIONS` (arcos visuais,
+    incluindo feedback top-down cosmético) alimentam o frontend. **Decisão de
+    escopo:** SPEC-009 é visualização — os módulos cognitivos reais (Brian2 LIF
+    ~70ms/run, sentence-transformers) são pesados demais p/ 1000 ticks/s em
+    tempo real, então a viz roda `DemoRegion` *através do engine/BrainBus reais*
+    (dado genuíno do pipeline; só a dinâmica por-região é simplificada). Trocar
+    por módulo real = outra chamada `add_module`.
+  - `visualization/static/`: `index.html` (importmap apontando p/ Three.js r160
+    **vendorizado** em `static/vendor/three/` — funciona 100% offline, sem CDN),
+    `neural_objects.js`
+    (`BrainRegion` esfera+heatmap+pulse, `SynapticArc` tubo curvo exc/inib,
+    `SpikeParticle` flash aditivo, `DopamineHalo` anel), `brain_scene.js`
+    (renderer/câmera/OrbitControls, render loop independente da taxa de dados,
+    FPS counter, raycast p/ isolar região por clique), `controls.js` (cliente
+    WebSocket + fiação dos botões, reconexão automática).
+  - `tests/unit/test_visualization.py` (14 testes): contrato `CognitiveModule`
+    da `DemoRegion`, demo brain sem ciclo + 8 estados de região, propagação de
+    atividade source→downstream, serialização JSON-safe de layout/frame,
+    `SimulationRunner` (step/play-pause/speed clamp/isolate toggle/reset/thread
+    rodando), renderer não-bloqueante. Smoke E2E via `TestClient`: layout no
+    connect → comandos `play`/`speed` → stream de frames com 8 regiões.
+  - **Suite completa: 206/206 testes passam** (`pytest tests/ -q`).
+  - `core/` intacto (contrato congelado; nenhuma alteração no engine/bus).
+
 ## O que está em progresso
-- Nada em progresso (SPEC-002 a 008 fechados; aguardando início do SPEC-009)
+- Nada em progresso (SPEC-002 a 009 fechados; aguardando SPEC-010/012)
 
 ## O que vem a seguir
-1. **SPEC-009:** Visualização Three.js (depende de SPEC-002). Base de
-   conhecimento/skills 3D já disponível em `docs/knowledge/` e `docs/skills/`
-   (threejs-webgl, react-three-fiber, babylonjs, aframe-webxr, etc.).
+1. **SPEC-010:** Dashboard Científico (depende de SPEC-009, ✅ pronto) — raster
+   plots, firing rate, pesos, TD-error em overlay HUD sobre a cena 3D. Estender
+   `serialize_frame`/WS com séries temporais por módulo. **SPEC-012:**
+   Instrumentação + Replay (depende de SPEC-002). Base de conhecimento/skills 3D
+   em `docs/knowledge/` e `docs/skills/` (threejs-webgl, react-three-fiber, etc.).
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
    memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
    (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
@@ -485,9 +532,23 @@ aditivo (apply_neuromodulation em todos os módulos + refresh do sinal, latênci
 192/192 no total. `core/interfaces.py` intacto.
 
 ### SPEC-009 — Visualização Three.js
-**Status:** ⏳ Aguarda SPEC-002
-**Branch:** —
-**Notas:** —
+**Status:** ✅ Concluído (2026-06-11)
+**Branch:** `claude/admiring-swirles-fd8b9f`
+**Notas:** `visualization/server.py` (FastAPI + WebSocket, `SimulationRunner` em
+thread, StateRenderer throttled a 30fps **não-bloqueante**, broadcaster async,
+comandos bidirecionais play/pause/step/speed/isolate/reset), `demo_brain.py`
+(8 regiões anatômicas BLUEPRINT §11 como `DemoRegion(CognitiveModule)` num DAG +
+`NeuromodulatorSystem` p/ halo de dopamina, rodando pelo engine/BrainBus reais),
+`static/` (Three.js r160 via importmap: `BrainRegion`/`SynapticArc`/
+`SpikeParticle`/`DopamineHalo`, heatmap firing rate, raycast p/ isolar). 14
+testes novos + smoke E2E `TestClient`. 206/206 no total. `core/` intacto.
+Critérios de aceitação: 8 regiões 3D nas posições anatômicas ✅, stream de dados
+reais do engine ✅, spike como flash de partícula ✅, controles play/pause/step
+via WebSocket bidirecional ✅. Three.js **vendorizado** (`static/vendor/three/`,
+offline). **Fix Windows:** `.js` era servido como `text/plain` (registro do
+Windows) e o browser recusa ES modules com MIME errado (strict checking) — o
+servidor agora força `mimetypes.add_type("text/javascript", ".js"/".mjs")` no
+startup. **Pendência leve:** FPS≥25 a verificar no browser do hardware-alvo.
 
 ### SPEC-010 — Dashboard Científico
 **Status:** ⏳ Aguarda SPEC-009

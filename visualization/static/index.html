@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Brain Simulator — Neural Visualization</title>
+    <style>
+      :root {
+        --bg: #070b14;
+        --panel: rgba(16, 22, 36, 0.85);
+        --border: #1f2a40;
+        --text: #cdd6e6;
+        --accent: #4fc3f7;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; height: 100%; overflow: hidden;
+        background: var(--bg); color: var(--text);
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      #scene { position: fixed; inset: 0; }
+      #hud {
+        position: fixed; top: 16px; left: 16px;
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 10px; padding: 14px 16px; min-width: 200px;
+        backdrop-filter: blur(6px);
+      }
+      #hud h1 { font-size: 14px; margin: 0 0 10px; letter-spacing: 0.5px; color: var(--accent); }
+      .stat { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; }
+      .stat span:last-child { font-variant-numeric: tabular-nums; color: #fff; }
+      #controls {
+        position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 8px; align-items: center;
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 12px; padding: 10px 14px; backdrop-filter: blur(6px);
+      }
+      button {
+        background: #16203a; color: var(--text); border: 1px solid var(--border);
+        border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      button:hover { background: #1e2c4d; border-color: var(--accent); }
+      button.active { background: #234; border-color: var(--accent); color: #fff; }
+      .speed-group { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+      input[type="range"] { width: 110px; accent-color: var(--accent); }
+      #legend {
+        position: fixed; top: 16px; right: 16px;
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 10px; padding: 12px 14px; font-size: 12px; max-width: 220px;
+        backdrop-filter: blur(6px);
+      }
+      #legend h2 { font-size: 12px; margin: 0 0 8px; color: var(--accent); }
+      .legend-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+      .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+      .bar { height: 10px; width: 100%; border-radius: 3px;
+             background: linear-gradient(90deg, #2b3df0, #18e0e0, #f0e000, #f02020); }
+    </style>
+  </head>
+  <body>
+    <div id="scene"></div>
+
+    <div id="hud">
+      <h1>BRAIN SIMULATOR</h1>
+      <div class="stat"><span>Status</span><span id="status">connecting…</span></div>
+      <div class="stat"><span>Sim time</span><span id="sim-time">0.00 s</span></div>
+      <div class="stat"><span>Speed</span><span id="speed-label">1×</span></div>
+      <div class="stat"><span>Dopamine</span><span id="dopamine">1.00</span></div>
+      <div class="stat"><span>FPS</span><span id="fps">0</span></div>
+    </div>
+
+    <div id="legend">
+      <h2>FIRING RATE</h2>
+      <div class="bar"></div>
+      <div class="legend-row"><span>low</span><span style="margin-left:auto;">high</span></div>
+      <h2 style="margin-top:12px;">SYNAPSES</h2>
+      <div class="legend-row"><div class="swatch" style="background:#66ff99;"></div> excitatory</div>
+      <div class="legend-row"><div class="swatch" style="background:#ff5252;"></div> inhibitory</div>
+      <div class="legend-row"><div class="swatch" style="background:#ffd54f;"></div> dopamine halo</div>
+    </div>
+
+    <div id="controls">
+      <button id="btn-play">▶ Play</button>
+      <button id="btn-step">▶▶ Step</button>
+      <button id="btn-reset">⏮ Reset</button>
+      <button id="btn-isolate">🔍 Isolate</button>
+      <div class="speed-group">
+        <label for="speed">Speed</label>
+        <input type="range" id="speed" min="0.5" max="20" step="0.5" value="1" />
+      </div>
+    </div>
+
+    <!-- Three.js is vendored locally (visualization/static/vendor/three) so the
+         scene works fully offline, with no CDN dependency. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/static/vendor/three/three.module.js",
+          "three/addons/": "/static/vendor/three/addons/"
+        }
+      }
+    </script>
+    <script type="module" src="/static/brain_scene.js"></script>
+  </body>
+</html>
