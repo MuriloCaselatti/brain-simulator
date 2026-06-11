@@ -11,6 +11,8 @@ from core.interfaces import (
     NeuromodulationSignal,
     SynapticTarget,
 )
+from core.brain_bus import BrainBus, BusEvent, BusSnapshot
+from core.simulation_engine import SimulationEngine
 
 __all__ = [
     "INTERFACE_VERSION",
@@ -20,4 +22,8 @@ __all__ = [
     "ModuleState",
     "NeuromodulationSignal",
     "SynapticTarget",
+    "BrainBus",
+    "BusEvent",
+    "BusSnapshot",
+    "SimulationEngine",
 ]
