@@ -1,7 +1,7 @@
 # SPEC-003 — LIF Neuron + STDP + Learning Engine
 
-**Status:** ⏳ Aguarda SPEC-001 | **Modelo:** Sonnet 4.6 (impl) + Opus 4.8 (validação)
-**Branch:** `feat/spec-003` | **Depende de:** SPEC-001
+**Status:** ✅ Concluído (2026-06-11) | **Modelo:** Sonnet 4.6 (impl) + Opus 4.8 (validação)
+**Branch:** — | **Depende de:** SPEC-001
 
 ---
 
@@ -27,10 +27,10 @@ TD: alpha = 0.1, gamma = 0.95
 - Lei do tudo-ou-nada verificada
 
 ## Critérios de Aceitação
-- [ ] LIF dispara na faixa correta (10–100 Hz)
-- [ ] STDP aumenta peso para pré→pós e diminui para pós→pré
-- [ ] TD-error é positivo quando recompensa > esperada
-- [ ] `pytest tests/scientific/test_lif_validation.py` → pass
+- [x] LIF dispara na faixa correta (10–100 Hz)
+- [x] STDP aumenta peso para pré→pós e diminui para pós→pré
+- [x] TD-error é positivo quando recompensa > esperada
+- [x] `pytest tests/scientific/test_lif_validation.py` → pass
 
 ## Prompt para Claude Code
 ```
