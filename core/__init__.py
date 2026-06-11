@@ -16,6 +16,20 @@ from core.simulation_engine import SimulationEngine
 from core.neuron import LIFPopulation
 from core.synapse import STDPSynapse
 from core.learning_engine import LearningEngine, PlasticityScheduler
+from core.instrumentation import (
+    InstrumentationConfig,
+    InstrumentationLogger,
+    iter_logs,
+    list_modules,
+    read_module_series,
+)
+from core.replay import (
+    ReplayMismatch,
+    ReplayPlayer,
+    ReplayRecorder,
+    run_seeded,
+    verify_replay,
+)
 
 __all__ = [
     "INTERFACE_VERSION",
@@ -33,4 +47,14 @@ __all__ = [
     "STDPSynapse",
     "LearningEngine",
     "PlasticityScheduler",
+    "InstrumentationConfig",
+    "InstrumentationLogger",
+    "iter_logs",
+    "list_modules",
+    "read_module_series",
+    "ReplayMismatch",
+    "ReplayPlayer",
+    "ReplayRecorder",
+    "run_seeded",
+    "verify_replay",
 ]
