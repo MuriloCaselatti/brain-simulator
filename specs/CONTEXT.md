@@ -6,9 +6,8 @@
 
 ## Status Atual
 **Fase:** 1 — Core (em progresso)
-**Próxima sessão:** SPEC-007 (Raciocínio)
-**Última atualização:** 2026-06-11 (SPEC-006 concluído; SPEC-004/005 mesclados
-nesta branch via `claude/angry-wozniak-0e09dd` — ver nota abaixo)
+**Próxima sessão:** SPEC-008 (Neuromodulação)
+**Última atualização:** 2026-06-11 (SPEC-007 concluído)
 
 ---
 
@@ -245,18 +244,74 @@ nesta branch via `claude/angry-wozniak-0e09dd` — ver nota abaixo)
   - Integração com `SimulationEngine`/`BrainBus` verificada via `add_module()`.
   - **Design matemático confirmado com Opus 4.8 antes de implementar.**
 
+- **SPEC-007 — Raciocínio (concluído 2026-06-11)**
+  - `modules/reasoning/model_free.py`: `ModelFreeRL` — sistema habitual
+    (gânglios da base). `q_values` por ação, atualizados por
+    Rescorla-Wagner/TD(0) (`update_value`, `learning_rate=0.05` padrão,
+    escalado por dopamina via `apply_neuromodulation`). Seleção de ação por
+    softmax (`select_action`, `temperature=0.2`) — **rápido** (lookup
+    direto), mas **inflexível** (taxa de aprendizado pequena e fixa, lento
+    para reaprender após mudança de contingência).
+  - `modules/reasoning/model_based.py`: `ModelBasedRL` — sistema
+    deliberativo. Mantém `reward_model` (modelo de mundo explícito por
+    ação), atualizado com `model_learning_rate=0.3` (maior que o do
+    model-free → **flexível**, readapta em poucos trials após reversão).
+    `deliberate()`/`select_action()` simulam o modelo (`n_simulations=20`,
+    reportado em `internal_state["deliberation_steps"]`) antes de decidir →
+    **lento** (custo computacional por decisão).
+  - `modules/reasoning/pfc.py`: `PFCExecutive` — inibição executiva. Lê o
+    vetor de valores do model-free; se o valor da ação mais tentadora excede
+    `effective_threshold()` (= `control_threshold`, padrão 0.5), publica
+    `internal_state["inhibit"]=True` e zera essa ação no `gate`. Estresse
+    (`noradrenaline > 1.0`, via `inputs.neuromodulation`/
+    `apply_neuromodulation`) eleva `effective_threshold` proporcionalmente a
+    `noradrenaline_sensitivity` — sob estresse agudo o PFC deixa de inibir
+    (Arnsten 2009).
+  - `modules/reasoning/decision_gate.py`: `DecisionGate` — arbitragem final.
+    Combina `[model_free_probs, model_based_probs]` via
+    `w_model_free = sigmoid(stress_gain * (noradrenaline -
+    baseline_noradrenaline))` (`baseline=1.0` → pesos iguais;
+    `noradrenaline` alto → mais peso ao model-free — Schwabe & Wolf 2009).
+    `set_inhibition_gate()` aplica o veto do PFC antes de renormalizar e
+    escolher a ação final (`internal_state["action"]`).
+  - Todos os 4 módulos implementam `CognitiveModule` ABC (SPEC-001) sem
+    alterações na interface congelada; `get_synaptic_targets()` de PFC e
+    DecisionGate retornam `[]` (não possuem sinapses aprendidas — apenas
+    arbitram/gateiam).
+  - `tests/unit/test_reasoning.py` (32 testes): contrato `CognitiveModule`
+    para os 4 módulos, Rescorla-Wagner/atualização do modelo de recompensa,
+    gating por dopamina/noradrenalina, inibição do PFC, arbitragem do
+    DecisionGate, reset.
+  - `tests/scientific/test_bandit_validation.py`: critérios de aceitação
+    SPEC-007 — (1) model-free converge (>70% braço melhor) em 200 trials de
+    bandit 2-braços; (2) model-based supera model-free após inversão de
+    contingência (média de 30 seeds, `reward_model` flexível readapta mais
+    rápido que `q_values` cacheados); (3) PFC inibe ação impulsiva quando
+    `valor > control_threshold`; (4) pipeline completo (model_free +
+    model_based + PFC + DecisionGate) — sob `noradrenaline=1.0` o PFC inibe
+    a ação impulsiva e a decisão segue o model-based; sob
+    `noradrenaline=2.0` o PFC deixa de inibir e a arbitragem favorece o
+    model-free, que passa a vencer.
+  - **Suite completa: 162/162 testes passam** (`pytest tests/ -q`).
+  - `core/interfaces.py`, `core/brain_bus.py`, `core/simulation_engine.py` e
+    os módulos das SPECs 002-006 não foram alterados.
+
 ## O que está em progresso
-- Nada em progresso (SPEC-002 a 006 fechados; aguardando início do SPEC-007)
+- Nada em progresso (SPEC-002 a 007 fechados; aguardando início do SPEC-008)
 
 ## O que vem a seguir
-1. **SPEC-007:** Raciocínio (depende de SPEC-004, 006).
+1. **SPEC-008:** Neuromodulação (depende de SPEC-002, 003).
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
    memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
    (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
    memória ainda foram testados isoladamente, em `numpy` puro.
-3. **Higiene de branches:** SPEC-004/005/006 vivem nesta branch
-   (`claude/cranky-morse-cae97f`), ainda **fora da `main`**. Consolidar na
-   `main` em ordem (004 → 005 → 006) via PRs.
+3. **Pendência (não-bloqueante):** os módulos de SPEC-007 leem
+   `inputs.neuromodulation` diretamente em `update()` (além de
+   `apply_neuromodulation`), pois a `SimulationEngine` ainda não chama
+   `apply_neuromodulation` automaticamente (gancho do SPEC-008). Revisitar
+   quando o SPEC-008 wirar a propagação de neuromoduladores globais.
+4. **Higiene de branches:** SPEC-004/005/006/007 vivem nesta branch, ainda
+   **fora da `main`**. Consolidar na `main` em ordem via PRs.
 
 ---
 
@@ -348,9 +403,17 @@ weight decay + norma de coluna). Substrato híbrido (núcleo rate-based + saída
 spiking). Design confirmado com Opus 4.8. 14 testes novos, 130/130 no total.
 
 ### SPEC-007 — Raciocínio
-**Status:** 🔜 Próxima (SPEC-004, 006 concluídos)
-**Branch:** —
-**Notas:** —
+**Status:** ✅ Concluído (2026-06-11)
+**Branch:** `claude/admiring-morse-8c5809`
+**Notas:** RL dual paralelo (`modules/reasoning/`): `ModelFreeRL`
+(Rescorla-Wagner, rápido/inflexível) + `ModelBasedRL` (modelo de mundo
+explícito, lento/flexível). `PFCExecutive` inibe ação impulsiva acima de
+`control_threshold`; estresse (noradrenalina) eleva o threshold (PFC menos
+eficaz) e desloca a arbitragem do `DecisionGate` para o model-free
+(Schwabe & Wolf 2009, Arnsten 2009). 32 testes novos, 162/162 no total.
+Validação científica em `tests/scientific/test_bandit_validation.py`
+(bandit 2-braços, inversão de contingência, inibição PFC, transição por
+estresse).
 
 ### SPEC-008 — Neuromodulação
 **Status:** ⏳ Aguarda SPEC-002, 003

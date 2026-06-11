@@ -1,6 +1,6 @@
 # SPEC-007 — Sistema de Raciocínio
 
-**Status:** ⏳ | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-004, SPEC-006
+**Status:** ✅ Concluído (2026-06-11) | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-004, SPEC-006
 
 ## Objetivo
 PFC Executive (controle inibitório + planejamento), RL dual (model-based + model-free), DecisionGate.
@@ -12,9 +12,9 @@ PFC Executive (controle inibitório + planejamento), RL dual (model-based + mode
 - `modules/reasoning/decision_gate.py` — integra emoção + razão → ação
 
 ## Critérios de Aceitação
-- [ ] Model-free converge em 2-armed bandit task (< 200 trials)
-- [ ] Model-based supera model-free em tarefa com inversão de contingência
-- [ ] PFC inibe resposta impulsiva quando recompensa > threshold de controle
+- [x] Model-free converge em 2-armed bandit task (< 200 trials)
+- [x] Model-based supera model-free em tarefa com inversão de contingência
+- [x] PFC inibe resposta impulsiva quando recompensa > threshold de controle
 
 ## Prompt para Claude Code
 ```
