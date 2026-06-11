@@ -6,9 +6,9 @@
 
 ## Status Atual
 **Fase:** 1 — Core (em progresso)
-**Próxima sessão:** SPEC-005 (Atenção)
-**Última atualização:** 2026-06-11 (SPEC-003 e SPEC-004 concluídos; SPEC-004
-implementado fora de ordem antes do SPEC-003 — ver nota abaixo)
+**Próxima sessão:** SPEC-006 (Processamento Preditivo)
+**Última atualização:** 2026-06-11 (SPEC-003, SPEC-004 e SPEC-005 concluídos;
+SPEC-004 implementado fora de ordem antes do SPEC-003 — ver nota abaixo)
 
 ---
 
@@ -159,12 +159,68 @@ implementado fora de ordem antes do SPEC-003 — ver nota abaixo)
     `CognitiveModule`. Quando o SPEC-003 for implementado, validar a
     integração via `SimulationEngine.add_module()`.
 
+- **SPEC-005 — Atenção: DAN, VAN, SaliencyMap (concluído 2026-06-11)**
+  - `modules/attention/_utils.py`: helpers compartilhados — `align_to`
+    (pad/truncate para `n_neurons`, pois o `SimulationEngine` concatena os
+    `spike_trains` de todas as dependências), `normalize` (escala para
+    `[0, 1]`), `center_surround_contrast` (campo receptivo center-surround
+    1D em anel).
+  - `modules/attention/saliency.py`: `SaliencyMap(CognitiveModule)` —
+    combina novidade temporal (média móvel exponencial,
+    `novelty_tau_ms=50ms`) com contraste espacial center-surround
+    (`contrast_weight=0.5`), normaliza para `[0, 1]`.
+    `apply_neuromodulation`: noradrenalina escala o ganho de excitação
+    (`_noradrenaline_gain`) aplicado à saliência bruta antes da
+    normalização. Saída: `spike_trains`/`internal_state["saliency_map"]`
+    (mapa contínuo `[0, 1]`), `internal_state["max_saliency"]` /
+    `["max_saliency_index"]`.
+  - `modules/attention/dan.py`: `DAN(CognitiveModule)` — recebe sinal
+    top-down do PFC via `inputs.spike_trains` (vetor `[0, 1]` por posição) e
+    produz `gain_map` (`internal_state["gain_map"]` /
+    `outputs.spike_trains`) que modula o ganho do módulo sensorial:
+    `gain = baseline_gain + pfc_signal * gain_amplification *
+    acetylcholine_gain * van_suppression`. Com os defaults
+    (`baseline_gain=1.0`, `gain_amplification=2.5`), o ganho no alvo
+    (`pfc_signal=1.0`) é `3.5`, ou seja `>= 2x` o ganho do distrator
+    (`baseline=1.0`) — critério de aceitação SPEC-005. Publica
+    `internal_state["attention_signal"]` (consumido pelo
+    `SimulationEngine` como `ModuleInputs.attention_signal` no tick
+    seguinte) e `internal_state["dan_focus"]`.
+    `apply_neuromodulation`: acetilcolina escala `gain_amplification`.
+  - `modules/attention/van.py`: `VAN(CognitiveModule)` — consome o mapa de
+    saliência via `inputs.spike_trains` (dependência de `SaliencyMap`); se
+    `max(saliency) >= effective_threshold`
+    (`interrupt_threshold + dan_focus * dan_suppression_strength`, escalado
+    pela acetilcolina), dispara `internal_state["interrupt"]=True`,
+    `["interrupt_location"]` e `["attention_signal"]=redirect_attention_signal`
+    (redireciona o ganho atencional no tick seguinte). Como o BrainBus é
+    síncrono em `dt=1ms`, a interrupção é decidida e publicada dentro do
+    mesmo tick — `<< 20ms` simulados (critério de aceitação SPEC-005).
+  - **Anticorrelação DAN-VAN** (critério de aceitação SPEC-005): acoplamento
+    explícito via `DAN.set_van_activation(van.van_activation)` (suprime
+    `gain_map`/`dan_focus` quando VAN dispara) e
+    `VAN.set_dan_suppression(dan.dan_focus)` (eleva `effective_threshold`
+    quando DAN está fortemente focado). Sem fiação automática no
+    `SimulationEngine` — ambos os módulos expõem getters/setters para essa
+    troca, a ser conectada por quem registra os módulos (ex.: SPEC-008/
+    orquestração futura).
+  - `modules/attention/__init__.py`: reexporta `DAN`, `VAN`, `SaliencyMap`.
+  - `tests/unit/test_attention.py` (19 testes): contrato `CognitiveModule`,
+    detecção de novidade/contraste, ganho >= 2x DAN, interrupção VAN em 1
+    tick, gating por acetilcolina/noradrenalina, anticorrelação DAN-VAN
+    round-trip, reset.
+  - **Suite completa: 98/98 testes passam** (`pytest tests/ -q`).
+  - `core/interfaces.py`, `core/brain_bus.py`, `core/simulation_engine.py`
+    e os módulos do SPEC-003 não foram alterados.
+
 ## O que está em progresso
-- Nada em progresso (SPEC-002, 003 e 004 fechados; aguardando início do SPEC-005)
+- Nada em progresso (SPEC-002, 003, 004 e 005 fechados; aguardando início do SPEC-006)
 
 ## O que vem a seguir
-1. **SPEC-005:** Atenção (Dorsal Attention Network) — implementar como
-   `CognitiveModule` plugado via `add_module()`.
+1. **SPEC-006:** Processamento Preditivo (Rao & Ballard 1999) — implementar
+   como `CognitiveModule` plugado via `add_module()`, usando `WorkingMemory`/
+   `EpisodicMemory`/`SemanticMemory` (SPEC-004) e `DAN`/`VAN`/`SaliencyMap`
+   (SPEC-005) como fontes de sinal.
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
    memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
    (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
@@ -239,9 +295,14 @@ de hashing offline). 18 testes novos em `tests/unit/test_memory.py`,
 validada.
 
 ### SPEC-005 — Atenção
-**Status:** ⏳ Aguarda SPEC-001, 002
+**Status:** ✅ Concluído (2026-06-11)
 **Branch:** —
-**Notas:** —
+**Notas:** `DAN`/`VAN`/`SaliencyMap` (`modules/attention/`). DAN amplifica
+alvo `>= 2x` distrator (`gain=3.5` vs `1.0` com defaults); VAN interrompe em
+1 tick (`<<20ms`) para saliência acima de `effective_threshold`;
+anticorrelação DAN-VAN via `set_van_activation`/`set_dan_suppression`
+(acoplamento manual, sem fiação automática no `SimulationEngine`). 19 testes
+novos, 98/98 no total.
 
 ### SPEC-006 — Processamento Preditivo
 **Status:** ⏳ Aguarda SPEC-004, 005
