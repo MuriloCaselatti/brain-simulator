@@ -6,9 +6,9 @@
 
 ## Status Atual
 **Fase:** 1 — Core (em progresso)
-**Próxima sessão:** SPEC-006 (Processamento Preditivo)
-**Última atualização:** 2026-06-11 (SPEC-003, SPEC-004 e SPEC-005 concluídos;
-SPEC-004 implementado fora de ordem antes do SPEC-003 — ver nota abaixo)
+**Próxima sessão:** SPEC-007 (Raciocínio)
+**Última atualização:** 2026-06-11 (SPEC-006 concluído; SPEC-004/005 mesclados
+nesta branch via `claude/angry-wozniak-0e09dd` — ver nota abaixo)
 
 ---
 
@@ -212,19 +212,51 @@ SPEC-004 implementado fora de ordem antes do SPEC-003 — ver nota abaixo)
   - **Suite completa: 98/98 testes passam** (`pytest tests/ -q`).
   - `core/interfaces.py`, `core/brain_bus.py`, `core/simulation_engine.py`
     e os módulos do SPEC-003 não foram alterados.
+- **SPEC-006 — Processamento Preditivo (concluído 2026-06-11)**
+  - `modules/predictive_coding/layer.py`: `PredictiveLayer` — um nível da
+    hierarquia Rao & Ballard 1999. Neurônios de **predição** (`r`, geram
+    `predict() = W·r` para a camada inferior) + neurônios de **erro**
+    (`compute_error() = abaixo − predição`). Helper NumPy puro, **não** é
+    `CognitiveModule` (mutado pela hierarquia, padrão `STDPSynapse`/ADR-008).
+    Aprendizado Hebbiano guiado por erro `W += lr·(π·outer(ε,r) − decay·W)`
+    (gradiente na energia livre precision-weighted), estabilizado com weight
+    decay + norma de coluna limitada (`max_col_norm`) — evita a divergência
+    do laço conjunto inferência/aprendizado.
+  - `modules/predictive_coding/hierarchy.py`:
+    `PredictiveCodingHierarchy(CognitiveModule)` — 3 níveis conectados
+    (`level_sizes=(48,32,16)` sobre `input_size=64` por padrão). `update()`
+    roda `n_inference_steps` iterações de settling (gradiente descendente:
+    bottom-up `Wᵀ(π·ε)` − top-down `π·ε_acima` − leak), depois aplica
+    aprendizado interno. Precisão `π = base·(1+ganho·attention_signal)·ACh`
+    (acetilcolina via `apply_neuromodulation`) — a atenção do `DAN` (SPEC-005)
+    escala o peso do erro. `set_top_down_prior()` injeta expectativa no topo
+    (gancho p/ priming por `EpisodicMemory`/SPEC-004). Saídas
+    spiking-compatíveis (taxas retificadas em Hz + máscara binária) +
+    `internal_state` com `prediction_error_per_level`, `weighted_error_per_level`,
+    `free_energy`, `precision`, `top_prediction`. Núcleo rate-based (híbrido:
+    backing por `LIFPopulation` é ponto de extensão documentado, off por padrão).
+  - `modules/predictive_coding/__init__.py`: reexporta
+    `PredictiveCodingHierarchy`, `PredictiveLayer`.
+  - `tests/unit/test_predictive_coding.py`: 14 testes — contrato
+    `CognitiveModule`, e os 3 critérios de aceitação: erro cai com treino
+    repetido (`< 0.5·` inicial; e **não** cai com plasticidade congelada),
+    prior top-down modula a representação inferior, atenção/precisão escala o
+    erro ponderado (e ACh=0 zera a precisão). **130/130 no total.**
+  - Integração com `SimulationEngine`/`BrainBus` verificada via `add_module()`.
+  - **Design matemático confirmado com Opus 4.8 antes de implementar.**
 
 ## O que está em progresso
-- Nada em progresso (SPEC-002, 003, 004 e 005 fechados; aguardando início do SPEC-006)
+- Nada em progresso (SPEC-002 a 006 fechados; aguardando início do SPEC-007)
 
 ## O que vem a seguir
-1. **SPEC-006:** Processamento Preditivo (Rao & Ballard 1999) — implementar
-   como `CognitiveModule` plugado via `add_module()`, usando `WorkingMemory`/
-   `EpisodicMemory`/`SemanticMemory` (SPEC-004) e `DAN`/`VAN`/`SaliencyMap`
-   (SPEC-005) como fontes de sinal.
+1. **SPEC-007:** Raciocínio (depende de SPEC-004, 006).
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
    memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
    (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
    memória ainda foram testados isoladamente, em `numpy` puro.
+3. **Higiene de branches:** SPEC-004/005/006 vivem nesta branch
+   (`claude/cranky-morse-cae97f`), ainda **fora da `main`**. Consolidar na
+   `main` em ordem (004 → 005 → 006) via PRs.
 
 ---
 
@@ -305,12 +337,18 @@ anticorrelação DAN-VAN via `set_van_activation`/`set_dan_suppression`
 novos, 98/98 no total.
 
 ### SPEC-006 — Processamento Preditivo
-**Status:** ⏳ Aguarda SPEC-004, 005
-**Branch:** —
-**Notas:** Estudar Rao & Ballard 1999 antes
+**Status:** ✅ Concluído (2026-06-11)
+**Branch:** `claude/cranky-morse-cae97f`
+**Notas:** `PredictiveLayer` + `PredictiveCodingHierarchy`
+(`modules/predictive_coding/`). Hierarquia Rao & Ballard 1999 de 3 níveis:
+predição top-down `W·r`, erro `abaixo − predição`, inferência por gradiente na
+energia livre, precisão `π = base·(1+ganho·attention)·ACh` (atenção do DAN
+escala o erro), aprendizado Hebbiano interno guiado por erro (estabilizado com
+weight decay + norma de coluna). Substrato híbrido (núcleo rate-based + saídas
+spiking). Design confirmado com Opus 4.8. 14 testes novos, 130/130 no total.
 
 ### SPEC-007 — Raciocínio
-**Status:** ⏳ Aguarda SPEC-004, 006
+**Status:** 🔜 Próxima (SPEC-004, 006 concluídos)
 **Branch:** —
 **Notas:** —
 
