@@ -5,9 +5,9 @@
 ---
 
 ## Status Atual
-**Fase:** 4 — Visualização (em progresso)
-**Próxima sessão:** SPEC-012 (Instrumentação + Replay) ou SPEC-011 (Linguagem)
-**Última atualização:** 2026-06-11 (SPEC-010 concluído)
+**Fase:** 4 — Visualização (concluída) / 5 — Instrumentação (concluída)
+**Próxima sessão:** SPEC-011 (Linguagem) ou SPEC-013 (Testes Científicos)
+**Última atualização:** 2026-06-11 (SPEC-012 concluído)
 
 ---
 
@@ -432,12 +432,67 @@
     periódicos (~1/s) decaindo, pause mantém estado, reset+step limpa os 3
     charts corretamente. `core/` intacto.
 
+- **SPEC-012 — Instrumentação + Replay (concluído 2026-06-11)**
+  - `core/instrumentation.py`: `InstrumentationConfig` (`output_dir`, `run_name`,
+    `log_every_n_steps` padrão `10`, `compression="gzip"`, `dtype=float32`) +
+    `InstrumentationLogger` — StateRenderer (`register_state_renderer(logger.record)`,
+    portanto não bloqueia o clock; exceções são engolidas pelo engine como nos
+    demais renderers). A cada tick amostrado (`tick % log_every_n_steps == 0`)
+    grava: (1) `<run_name>.jsonl` — uma linha por `(step, module_id)` com
+    `mean_voltage`, `mean_firing_rate`, `mean_weight`, `active_synapses`,
+    `n_spikes`, `metadata` (sanitizado via `_json_safe` para tipos numpy); (2)
+    `<run_name>.h5` — um group por `module_id`, datasets resizable
+    (`maxshape=(None, n_neurons)`, `chunks=True`, gzip) por variável:
+    `timestamps`, `voltage`, `firing_rate`, `spikes` (de
+    `ModuleOutputs.spike_trains` via `BusEvent("module_output")`),
+    `mean_weight`, `active_synapses`. `set_seed()` grava o seed como atributo
+    HDF5 (provenance). `iter_logs(jsonl_path, module_id=, start_step=,
+    end_step=)` consulta os logs; `list_modules`/`read_module_series` leem o
+    HDF5 de volta.
+  - `core/replay.py`: `run_seeded(factory, seed, n_steps)` constrói um engine
+    via `factory(seed)` (factory deve recriar **todos** os módulos
+    estocásticos a partir do seed — `DemoRegion`/`ModelFreeRL`/etc. já aceitam
+    `seed`/`rng`, SPEC-006/007/009) e roda `n_steps` ticks. `verify_replay(...)`
+    roda duas vezes a partir do mesmo seed e compara `ModuleState.voltage`/
+    `firing_rate`/`mean_weight`/`active_synapses` tick-a-tick — lista vazia de
+    `ReplayMismatch` = replay determinístico (critério de aceitação SPEC-012).
+    `ReplayRecorder` (context manager) registra um `InstrumentationLogger` no
+    engine e grava o `seed` como provenance; `ReplayPlayer` lê o HDF5 gravado
+    de volta como uma sequência de frames por tick (sem re-simular) — útil
+    para alimentar a visualização em "modo replay".
+  - `core/__init__.py`: reexporta `InstrumentationConfig`,
+    `InstrumentationLogger`, `iter_logs`, `list_modules`, `read_module_series`,
+    `ReplayMismatch`, `ReplayPlayer`, `ReplayRecorder`, `run_seeded`,
+    `verify_replay`.
+  - `tests/unit/test_instrumentation.py` (6 testes): sampling a cada N ticks,
+    shapes/dtype dos datasets HDF5 (`voltage`/`spikes` = `[n_sampled, n_neurons]`,
+    `float32`), provenance do seed, `iter_logs` filtrando por `module_id` e
+    range de `step`, `verify_replay` determinístico com `build_demo_brain`
+    (SPEC-009, seed fixo) — incluindo um teste de sanidade de que seeds
+    diferentes *divergem* (a checagem de diff não é vácua) — e round-trip
+    `ReplayRecorder`/`ReplayPlayer`.
+  - `tests/scientific/test_instrumentation_validation.py` (1 teste, critério de
+    aceitação SPEC-012): simulação completa de 10s (10.000 ticks,
+    `build_demo_brain(n_neurons=50)`, `log_every_n_steps=10` → 1000 amostras)
+    grava HDF5 < 50MB. Roda à parte de `tests/unit/` (~2min) por ser uma
+    execução real de 10k ticks — mesmo padrão de
+    `tests/scientific/test_bandit_validation.py`.
+  - **Suite completa: 215/215 testes passam** (`pytest tests/ -q`, ~150s com o
+    teste científico de 10s incluso).
+  - **Nota de design:** `ModuleState` (interface congelada SPEC-001) expõe
+    apenas `mean_weight` (escalar), não a matriz de pesos completa — o dataset
+    HDF5 `weights` é portanto a série temporal de `mean_weight` por módulo, não
+    a matriz `[N_pre, N_post]`. Para inspecionar pesos completos seria preciso
+    um hook adicional fora do contrato `CognitiveModule` (fora de escopo
+    SPEC-012).
+  - `core/interfaces.py`, `core/brain_bus.py`, `core/simulation_engine.py` não
+    foram alterados.
+
 ## O que está em progresso
-- Nada em progresso (SPEC-002 a 010 fechados; aguardando SPEC-011/012)
+- Nada em progresso (SPEC-002 a 012 fechados; aguardando SPEC-011/013)
 
 ## O que vem a seguir
-1. **SPEC-012:** Instrumentação + Replay (depende de SPEC-002, ✅ pronto).
-   **SPEC-011:** Módulo de Linguagem (depende de SPEC-004, ✅ pronto; exige
+1. **SPEC-011:** Módulo de Linguagem (depende de SPEC-004, ✅ pronto; exige
    chave da Claude API). Base de conhecimento/skills 3D em `docs/knowledge/` e
    `docs/skills/` (threejs-webgl, react-three-fiber, etc.).
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
@@ -607,9 +662,18 @@ Verificado end-to-end no browser (preview).
 **Notas:** Exige chave da Claude API
 
 ### SPEC-012 — Instrumentação + Replay
-**Status:** ⏳ Aguarda SPEC-002
+**Status:** ✅ Concluído (2026-06-11)
 **Branch:** —
-**Notas:** —
+**Notas:** `core/instrumentation.py` (`InstrumentationLogger` — StateRenderer
+não-bloqueante, JSONL + HDF5 amostrados a cada `log_every_n_steps`, groups por
+módulo/datasets por variável, `iter_logs` consultável por `module_id`/range de
+`step`) + `core/replay.py` (`verify_replay`/`run_seeded` — re-execução
+determinística a partir de um seed via `factory(seed)`; `ReplayRecorder`/
+`ReplayPlayer` para gravação com provenance de seed + playback sem
+re-simulação). 6 testes novos em `tests/unit/test_instrumentation.py` + 1
+teste de aceitação (10s/10k ticks → HDF5 < 50MB) em
+`tests/scientific/test_instrumentation_validation.py`. 215/215 no total.
+`core/interfaces.py`/`brain_bus.py`/`simulation_engine.py` não alterados.
 
 ### SPEC-013 — Testes Científicos
 **Status:** ⏳ Aguarda todos

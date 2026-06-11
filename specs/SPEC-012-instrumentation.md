@@ -1,6 +1,6 @@
 # SPEC-012 — Instrumentação + Logs + Replay
 
-**Status:** ⏳ | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-002
+**Status:** ✅ | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-002
 
 ## Objetivo
 Observabilidade completa: logs estruturados JSONL, snapshots HDF5, replay determinístico.
@@ -10,9 +10,9 @@ Observabilidade completa: logs estruturados JSONL, snapshots HDF5, replay determ
 - `core/replay.py` — grava e reproduce simulações identicamente
 
 ## Critérios de Aceitação
-- [ ] Simulação de 10s salva em HDF5 < 50MB
-- [ ] Replay reproduz identicamente (seed fixo)
-- [ ] Logs consultáveis por módulo_id e range de timestep
+- [x] Simulação de 10s salva em HDF5 < 50MB
+- [x] Replay reproduz identicamente (seed fixo)
+- [x] Logs consultáveis por módulo_id e range de timestep
 
 ## Prompt para Claude Code
 ```
