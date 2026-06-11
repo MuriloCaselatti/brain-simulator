@@ -1,6 +1,6 @@
 # SPEC-005 — Sistema de Atenção
 
-**Status:** ⏳ | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-001, SPEC-002
+**Status:** ✅ Concluído (2026-06-11) | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-001, SPEC-002
 
 ## Objetivo
 DAN (top-down voluntário), VAN (bottom-up reflexivo), SaliencyMap para priorização de inputs.
@@ -11,9 +11,9 @@ DAN (top-down voluntário), VAN (bottom-up reflexivo), SaliencyMap para prioriza
 - `modules/attention/saliency.py` — mapa de saliência computacional
 
 ## Critérios de Aceitação
-- [ ] DAN amplifica representação-alvo ≥ 2× vs. distratores
-- [ ] VAN interrompe processamento em < 20ms simulados para alta saliência
-- [ ] Anticorrelação DAN-VAN implementada (quando um ativa, outro suprime)
+- [x] DAN amplifica representação-alvo ≥ 2× vs. distratores
+- [x] VAN interrompe processamento em < 20ms simulados para alta saliência
+- [x] Anticorrelação DAN-VAN implementada (quando um ativa, outro suprime)
 
 ## Prompt para Claude Code
 ```
