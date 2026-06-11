@@ -1,6 +1,6 @@
 # SPEC-008 — Neuromodulação
 
-**Status:** ⏳ | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-002, SPEC-003
+**Status:** ✅ Concluído (2026-06-11) | **Modelo:** Sonnet 4.6 | **Depende de:** SPEC-002, SPEC-003
 
 ## Objetivo
 Dopamina (TD-error broadcast), Noradrenalina (arousal/threshold), Acetilcolina (atenção/plasticidade).
@@ -11,10 +11,13 @@ Dopamina (TD-error broadcast), Noradrenalina (arousal/threshold), Acetilcolina (
 - `modules/neuromodulation/acetylcholine.py` — sinal/ruído atencional
 
 ## Critérios de Aceitação
-- [ ] Burst dopaminérgico aumenta LR de STDP em todos os módulos
-- [ ] Silêncio dopaminérgico (omissão de recompensa) diminui pesos ativos
-- [ ] Noradrenalina alta → V_thresh cai → neurônios mais responsivos
-- [ ] Replica qualativamente Schultz 1997
+- [x] Burst dopaminérgico aumenta LR de STDP em todos os módulos
+- [x] Silêncio dopaminérgico (omissão de recompensa) diminui pesos ativos
+- [x] Noradrenalina alta → V_thresh cai → neurônios mais responsivos
+- [x] Replica qualativamente Schultz 1997
+
+Validado em `tests/scientific/test_dopamine_validation.py` (4 testes) e
+`tests/unit/test_neuromodulation.py` (26 testes). Suite: 192/192.
 
 ## Prompt para Claude Code
 ```

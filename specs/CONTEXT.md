@@ -6,8 +6,8 @@
 
 ## Status Atual
 **Fase:** 1 — Core (em progresso)
-**Próxima sessão:** SPEC-008 (Neuromodulação)
-**Última atualização:** 2026-06-11 (SPEC-007 concluído)
+**Próxima sessão:** SPEC-009 (Visualização Three.js)
+**Última atualização:** 2026-06-11 (SPEC-008 concluído)
 
 ---
 
@@ -296,20 +296,76 @@
   - `core/interfaces.py`, `core/brain_bus.py`, `core/simulation_engine.py` e
     os módulos das SPECs 002-006 não foram alterados.
 
+- **SPEC-008 — Neuromodulação (concluído 2026-06-11)**
+  - `modules/neuromodulation/dopamine.py`: `DopamineSystem` — canal de
+    reward-prediction error (Schultz 1997). Mapeia TD-error → nível fásico
+    centrado no basal `1.0`: `level = clip(1.0 + gain·drive, 0, 2)`. TD>0 →
+    **burst** (>1), TD<0 → **silêncio/dip** (<1), TD=0 → basal. O drive
+    relaxa exponencialmente (`tau_ms=50`) de volta ao basal (resposta
+    fásica). Helper NumPy puro, **não** é `CognitiveModule` (padrão
+    `STDPSynapse`/ADR-008).
+  - `modules/neuromodulation/noradrenaline.py`: `NoradrenalineSystem` —
+    canal de arousal (locus coeruleus, Aston-Jones & Cohen 2005).
+    `level = clip(1.0 + gain·arousal, 0, 2)`, arousal∈[0,1]. Consumido por
+    `LIFPopulation.apply_neuromodulation`: nível acima do basal **baixa o
+    V_thresh** → neurônios mais responsivos. Decay `tau_ms=200`.
+  - `modules/neuromodulation/acetylcholine.py`: `AcetylcholineSystem` —
+    canal de SNR atencional/plasticidade (forebrain basal, Yu & Dayan 2005).
+    `level = clip(1.0 + att_gain·(attention−0.5) + unc_gain·uncertainty, 0, 2)`.
+    Consumido por `LIFPopulation` (ganho de SNR) e `PlasticityScheduler`
+    (gate de STDP, threshold 0.3). Decay para baseline neutro.
+  - `modules/neuromodulation/system.py`:
+    `NeuromodulatorSystem(CognitiveModule)` — centraliza os 3 canais e emite
+    o `NeuromodulationSignal` **global**. Nó tardio na cadeia
+    (`Reasoning → Neuromodulators → LearningEngine`). Drivers via
+    `set_td_error`/`observe_reward` (dopamina), `set_arousal`
+    (noradrenalina), `set_attention`/`set_uncertainty` (acetilcolina; ACh
+    usa `inputs.attention_signal` por padrão). `connect_learning_engine()`
+    puxa `last_td_error` automaticamente a cada tick (fecha o laço
+    dopamina→LR). `current_signal` property exposta ao engine.
+    `apply_neuromodulation` é no-op (é a *fonte*, não um *sink*).
+  - **Wiring no `SimulationEngine` (aditivo, gancho do SPEC-008):**
+    `register_neuromodulator(module_id)` designa o módulo-fonte. Quando
+    registrado, `step()` (a) chama `apply_neuromodulation(self.neuromodulation)`
+    em **todos** os módulos antes do tick e (b) atualiza `self.neuromodulation`
+    a partir do `current_signal` da fonte após ela rodar — sinal emitido no
+    tick N é broadcast no tick N+1 (latência síncrona de 1 tick do BrainBus).
+    Sem neuromodulador registrado, o engine mantém o sinal basal e **não**
+    chama `apply_neuromodulation` (comportamento pré-SPEC-008 preservado;
+    resolve a pendência #3 do CONTEXT).
+  - `modules/neuromodulation/__init__.py`: reexporta `DopamineSystem`,
+    `NoradrenalineSystem`, `AcetylcholineSystem`, `NeuromodulatorSystem`.
+  - `tests/unit/test_neuromodulation.py` (26 testes): canais isolados,
+    contrato `CognitiveModule`, drivers, `current_signal`, reset, integração
+    com o engine (broadcast no tick seguinte; basal sem registro).
+  - `tests/scientific/test_dopamine_validation.py` (4 testes — critérios de
+    aceitação SPEC-008): (1) burst aumenta a LR de STDP em múltiplas
+    projeções; (2) silêncio dopaminérgico (omissão, TD<0) deprime sinapses
+    ativas via regra three-factor `dw = lr·(DA−1)·elegibilidade`
+    (Reynolds & Wickens 2002); (3) noradrenalina alta baixa o V_thresh →
+    firing rate maior (validado contra o backend Brian2 LIF); (4) replicação
+    qualitativa de Schultz 1997 (burst/none/dip).
+  - **Suite completa: 192/192 testes passam** (`pytest tests/ -q`).
+  - `core/interfaces.py` não foi alterado (contrato congelado intacto).
+    `core/simulation_engine.py` recebeu mudanças **aditivas** (sem quebrar
+    APIs existentes).
+
 ## O que está em progresso
-- Nada em progresso (SPEC-002 a 007 fechados; aguardando início do SPEC-008)
+- Nada em progresso (SPEC-002 a 008 fechados; aguardando início do SPEC-009)
 
 ## O que vem a seguir
-1. **SPEC-008:** Neuromodulação (depende de SPEC-002, 003).
+1. **SPEC-009:** Visualização Three.js (depende de SPEC-002). Base de
+   conhecimento/skills 3D já disponível em `docs/knowledge/` e `docs/skills/`
+   (threejs-webgl, react-three-fiber, babylonjs, aframe-webxr, etc.).
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
    memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
    (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
    memória ainda foram testados isoladamente, em `numpy` puro.
-3. **Pendência (não-bloqueante):** os módulos de SPEC-007 leem
-   `inputs.neuromodulation` diretamente em `update()` (além de
-   `apply_neuromodulation`), pois a `SimulationEngine` ainda não chama
-   `apply_neuromodulation` automaticamente (gancho do SPEC-008). Revisitar
-   quando o SPEC-008 wirar a propagação de neuromoduladores globais.
+3. **Resolvido no SPEC-008:** a `SimulationEngine` agora chama
+   `apply_neuromodulation` automaticamente em todos os módulos quando um
+   `NeuromodulatorSystem` é registrado via `register_neuromodulator()`. Os
+   módulos do SPEC-007 que também leem `inputs.neuromodulation` em `update()`
+   continuam funcionando (o sinal chega pelas duas vias).
 4. **Higiene de branches:** SPEC-004/005/006/007 vivem nesta branch, ainda
    **fora da `main`**. Consolidar na `main` em ordem via PRs.
 
@@ -416,9 +472,17 @@ Validação científica em `tests/scientific/test_bandit_validation.py`
 estresse).
 
 ### SPEC-008 — Neuromodulação
-**Status:** ⏳ Aguarda SPEC-002, 003
-**Branch:** —
-**Notas:** —
+**Status:** ✅ Concluído (2026-06-11)
+**Branch:** `claude/ecstatic-fermi-b697b3`
+**Notas:** 3 canais globais (`modules/neuromodulation/`): `DopamineSystem`
+(TD-error → burst/silêncio/basal, Schultz 1997), `NoradrenalineSystem`
+(arousal → baixa V_thresh) e `AcetylcholineSystem` (atenção/incerteza → SNR +
+gate de plasticidade). `NeuromodulatorSystem(CognitiveModule)` centraliza os 3
+e emite o `NeuromodulationSignal` global; `connect_learning_engine()` fecha o
+laço dopamina→LR. `SimulationEngine.register_neuromodulator()` faz o broadcast
+aditivo (apply_neuromodulation em todos os módulos + refresh do sinal, latência
+1 tick). 30 testes novos (26 unit + 4 científicos, critérios de aceitação),
+192/192 no total. `core/interfaces.py` intacto.
 
 ### SPEC-009 — Visualização Three.js
 **Status:** ⏳ Aguarda SPEC-002

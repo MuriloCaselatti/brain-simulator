@@ -62,6 +62,7 @@ class SimulationEngine:
         self.neuromodulation = NeuromodulationSignal()
         self._last_outputs: Dict[str, ModuleOutputs] = {}
         self._attention_signal = 1.0
+        self._neuromodulator_id: Optional[str] = None
 
     # -- Configuration ---------------------------------------------------
 
@@ -87,6 +88,36 @@ class SimulationEngine:
         self._dependencies[module_id] = set(depends_on or ())
         self._insertion_order.append(module_id)
         self._order_dirty = True
+
+    def register_neuromodulator(self, module_id: str) -> None:
+        """Designate a registered module as the global neuromodulation source.
+
+        The named module (a SPEC-008
+        :class:`~modules.neuromodulation.system.NeuromodulatorSystem`, or any
+        module exposing a ``current_signal`` :class:`NeuromodulationSignal`
+        property) becomes the authority for :attr:`neuromodulation`.
+
+        While a neuromodulator is registered, :meth:`step` (a) applies the
+        current global signal to *every* module via
+        :meth:`~core.interfaces.CognitiveModule.apply_neuromodulation` before
+        the tick runs, and (b) refreshes :attr:`neuromodulation` from the
+        source's ``current_signal`` after it updates -- so the signal it emits
+        on tick ``N`` is broadcast on tick ``N + 1`` (the synchronous one-tick
+        BrainBus latency). Until one is registered the engine keeps the basal
+        signal and does not call ``apply_neuromodulation`` (preserving the
+        pre-SPEC-008 behaviour).
+
+        Raises:
+            ValueError: If ``module_id`` is not registered, or the module does
+                not expose a ``current_signal`` attribute.
+        """
+        if module_id not in self._modules:
+            raise ValueError(f"unknown module_id {module_id!r}")
+        if not hasattr(self._modules[module_id], "current_signal"):
+            raise ValueError(
+                f"module {module_id!r} does not expose a 'current_signal' property"
+            )
+        self._neuromodulator_id = module_id
 
     def register_state_renderer(self, callback: Callable[[BusSnapshot], None]) -> None:
         """Register a callback notified with each tick's :class:`BusSnapshot`.
@@ -162,12 +193,22 @@ class SimulationEngine:
         if self._order_dirty:
             self._compute_order()
 
+        # Broadcast the current global neuromodulatory signal to every module
+        # before the tick runs (SPEC-008). Only active once a neuromodulator is
+        # registered, so the basal pre-SPEC-008 behaviour is preserved.
+        if self._neuromodulator_id is not None:
+            for module in self._modules.values():
+                module.apply_neuromodulation(self.neuromodulation)
+
         for module_id in self._execution_order:
             module = self._modules[module_id]
             inputs = self._build_inputs(module_id)
 
             outputs = module.update(self.DT_MS, inputs)
             self._last_outputs[module_id] = outputs
+
+            if module_id == self._neuromodulator_id:
+                self.neuromodulation = module.current_signal
 
             attention = outputs.internal_state.get("attention_signal")
             if attention is not None:
