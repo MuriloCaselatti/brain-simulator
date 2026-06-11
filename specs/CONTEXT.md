@@ -5,9 +5,9 @@
 ---
 
 ## Status Atual
-**Fase:** 4 — Visualização (concluída) / 5 — Instrumentação (concluída)
-**Próxima sessão:** SPEC-011 (Linguagem) ou SPEC-013 (Testes Científicos)
-**Última atualização:** 2026-06-11 (SPEC-012 concluído)
+**Fase:** 4 — Visualização (concluída) / 5 — Instrumentação (concluída) / 6 — Linguagem (concluída)
+**Próxima sessão:** SPEC-013 (Testes Científicos)
+**Última atualização:** 2026-06-11 (SPEC-011 e SPEC-012 concluídos)
 
 ---
 
@@ -432,6 +432,40 @@
     periódicos (~1/s) decaindo, pause mantém estado, reset+step limpa os 3
     charts corretamente. `core/` intacto.
 
+- **SPEC-011 — Módulo de Linguagem (Claude API) (concluído 2026-06-11)**
+  - `modules/language/encoder.py`: `SpikeCodec` — codec determinístico
+    semântico↔spike (NumPy puro, offline). `vector_to_spikes` rate-codeia um
+    vetor denso em máscara binária `[n_neurons]` + taxas em Hz (min-max →
+    `[0,1]`, threshold → spikes, `×max_rate_hz`); `spikes_to_vector` lê
+    spikes/rates de volta a um vetor `embedding_dim` (inverso aproximado);
+    `encode_text`/`embed_text` embute texto via `embed_fn` injetado (ex.:
+    `SemanticMemory.embed`) ou fallback de hashing dependency-free.
+  - `modules/language/claude_module.py`:
+    - `ClaudeModule(CognitiveModule)` — região de linguagem. `update()` decodifica
+      `inputs.spike_trains` para ativação; **gateia** a chamada ao Claude por
+      (a) `activation_threshold` (acetilcolina baixa o threshold efetivo via
+      `apply_neuromodulation`) e (b) `min_call_interval_ms` de tempo simulado
+      entre calls. Quando ativado, monta prompt a partir de `set_context()`
+      (ex.: top concepts da `SemanticMemory`) ou do padrão de ativação, chama o
+      cliente, e re-encoda a resposta em spikes via `SpikeCodec`. Fora de
+      ativação, decai para o silêncio. `get_synaptic_targets()` → `[]` (sem
+      sinapses plásticas, como o PFC). `reset()` limpa estado + cache.
+    - `ClaudeClient` (Protocol `complete(prompt)->str`), `AnthropicClient`
+      (SDK oficial `anthropic`, **lazy import**, model SPEC-011
+      `claude-sonnet-4-6`), `MockClaudeClient` (determinístico, **sem API key,
+      sem rede** — default do módulo), `ResponseCache` (LRU `prompt→response`).
+  - **Segurança:** **nenhuma API key no código/repo.** `AnthropicClient` lê
+    `ANTHROPIC_API_KEY` do ambiente (como o SDK), levanta `RuntimeError` claro
+    se ausente; `.env` já está no `.gitignore`. Default offline (mock) →
+    testes/CI não precisam de key. **A chave colada no prompt da sessão foi
+    exposta em texto plano e deve ser ROTACIONADA no console da Anthropic.**
+  - `tests/unit/test_language.py`: 17 testes — contrato `CognitiveModule`,
+    codec roundtrip/determinismo, gating por ativação + intervalo mínimo, cache
+    (LRU + reuso evita call repetida), gate por acetilcolina, mock sem key,
+    `AnthropicClient` levanta sem key, integração com `SimulationEngine`.
+    **225/225 no total** (`pytest tests/ -q`).
+  - `core/` intacto (contrato congelado). Pendência SPEC-004↔003 não tocada.
+
 - **SPEC-012 — Instrumentação + Replay (concluído 2026-06-11)**
   - `core/instrumentation.py`: `InstrumentationConfig` (`output_dir`, `run_name`,
     `log_every_n_steps` padrão `10`, `compression="gzip"`, `dtype=float32`) +
@@ -477,8 +511,9 @@
     grava HDF5 < 50MB. Roda à parte de `tests/unit/` (~2min) por ser uma
     execução real de 10k ticks — mesmo padrão de
     `tests/scientific/test_bandit_validation.py`.
-  - **Suite completa: 215/215 testes passam** (`pytest tests/ -q`, ~150s com o
-    teste científico de 10s incluso).
+  - **Suite completa após merge com SPEC-011: 232/232 testes passam**
+    (`pytest tests/ -q`; 212 em `tests/unit/` + 20 em `tests/scientific/`,
+    incluindo o teste de 10s/10k-ticks deste SPEC).
   - **Nota de design:** `ModuleState` (interface congelada SPEC-001) expõe
     apenas `mean_weight` (escalar), não a matriz de pesos completa — o dataset
     HDF5 `weights` é portanto a série temporal de `mean_weight` por módulo, não
@@ -489,12 +524,13 @@
     foram alterados.
 
 ## O que está em progresso
-- Nada em progresso (SPEC-002 a 012 fechados; aguardando SPEC-011/013)
+- Nada em progresso (SPEC-002 a 012 fechados; aguardando SPEC-013).
+- **Ação pendente do usuário:** rotacionar a API key da Anthropic exposta em
+  texto plano no prompt da sessão SPEC-011 (ver nota de segurança acima).
 
 ## O que vem a seguir
-1. **SPEC-011:** Módulo de Linguagem (depende de SPEC-004, ✅ pronto; exige
-   chave da Claude API). Base de conhecimento/skills 3D em `docs/knowledge/` e
-   `docs/skills/` (threejs-webgl, react-three-fiber, etc.).
+1. **SPEC-013:** Testes Científicos (validação de critérios de aceitação
+   agregados das specs anteriores).
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
    memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
    (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
@@ -657,9 +693,15 @@ via `SyntaxError` — renomeado para `chartHud`. 2 testes novos, 208/208 no tota
 Verificado end-to-end no browser (preview).
 
 ### SPEC-011 — Módulo de Linguagem
-**Status:** ⏳ Aguarda SPEC-004
+**Status:** ✅ Concluído (2026-06-11)
 **Branch:** —
-**Notas:** Exige chave da Claude API
+**Notas:** `ClaudeModule` + `SpikeCodec` (`modules/language/`). Região de
+linguagem bidirecional (spike→prompt→Claude→spike) com gating por ativação +
+intervalo mínimo, cache LRU de respostas, e `MockClaudeClient` offline (default,
+sem API key). `AnthropicClient` usa o SDK oficial (model `claude-sonnet-4-6`) e
+lê `ANTHROPIC_API_KEY` do ambiente — **nenhuma key no código** (`.env` no
+gitignore). 17 testes novos, 225/225 no total. **Ação pendente do usuário:
+rotacionar a API key exposta no prompt da sessão.**
 
 ### SPEC-012 — Instrumentação + Replay
 **Status:** ✅ Concluído (2026-06-11)
