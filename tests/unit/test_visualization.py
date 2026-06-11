@@ -26,6 +26,7 @@ from visualization.demo_brain import (
     build_demo_brain,
 )
 from visualization.server import (
+    RASTER_NEURONS,
     SimulationRunner,
     serialize_frame,
     serialize_layout,
@@ -131,8 +132,36 @@ def test_serialize_frame_is_json_safe_and_complete():
     for region in frame["regions"]:
         assert isinstance(region["firing_rate"], float)
         assert isinstance(region["spike"], bool)
+        # SPEC-010: per-module spike raster for the HUD raster plot.
+        assert len(region["raster"]) == RASTER_NEURONS
+        assert set(region["raster"]).issubset({0, 1})
+    # SPEC-010: TD-error temporal signal.
+    assert isinstance(frame["td_error"], float)
     # Whole frame must be JSON-serializable (no numpy scalars leaking through).
     json.dumps(frame)
+
+
+# -- SPEC-010: HUD additions (raster + TD-error) --------------------------------
+
+def test_runner_drives_td_error_signal():
+    runner = SimulationRunner(build_demo_brain(n_neurons=30))
+    saw_nonzero = False
+    for _ in range(1001):
+        runner._advance()
+        if abs(runner._last_td_error) > 1e-9:
+            saw_nonzero = True
+    assert saw_nonzero
+    frame = runner.latest_frame()
+    assert "td_error" in frame
+    assert isinstance(frame["td_error"], float)
+
+
+def test_runner_reset_clears_td_error():
+    runner = SimulationRunner(build_demo_brain(n_neurons=30))
+    for _ in range(1001):
+        runner._advance()
+    runner.handle_command({"cmd": "reset"})
+    assert runner._last_td_error == 0.0
 
 
 # -- SimulationRunner ----------------------------------------------------------

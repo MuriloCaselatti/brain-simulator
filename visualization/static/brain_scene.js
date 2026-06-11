@@ -14,6 +14,7 @@ import {
   DopamineHalo,
 } from "./neural_objects.js";
 import { setupControls } from "./controls.js";
+import { Hud } from "./hud.js";
 
 class BrainScene {
   constructor(container) {
@@ -174,4 +175,5 @@ scene.start((fps) => {
   if (el) el.textContent = fps.toString();
 });
 
-setupControls(scene);
+const hud = new Hud();
+setupControls(scene, hud);

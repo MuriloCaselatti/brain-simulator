@@ -54,6 +54,29 @@
       .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; }
       .bar { height: 10px; width: 100%; border-radius: 3px;
              background: linear-gradient(90deg, #2b3df0, #18e0e0, #f0e000, #f02020); }
+
+      /* SPEC-010: floating scientific dashboard (canvas2D plots). */
+      #hud-charts {
+        position: fixed; top: 300px; right: 16px; width: 252px;
+        display: flex; flex-direction: column; gap: 12px;
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 10px; padding: 12px 14px; backdrop-filter: blur(6px);
+      }
+      #hud-charts h2 { font-size: 11px; margin: 0; color: var(--accent); letter-spacing: 0.5px; }
+      #hud-charts canvas {
+        width: 100%; display: block; background: #070b14; border-radius: 4px;
+        margin-top: 6px;
+      }
+      #raster-canvas { height: 96px; image-rendering: pixelated; image-rendering: crisp-edges; }
+      #rate-canvas, #td-canvas { height: 90px; }
+      .chart-header { display: flex; justify-content: space-between; align-items: center; }
+      #raster-select {
+        background: #16203a; color: var(--text); border: 1px solid var(--border);
+        border-radius: 6px; font-size: 11px; padding: 2px 4px; max-width: 130px;
+      }
+      .rate-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; }
+      .rate-legend .legend-row { margin: 0; font-size: 10px; gap: 4px; }
+      .rate-legend .swatch { width: 10px; height: 10px; }
     </style>
   </head>
   <body>
@@ -76,6 +99,25 @@
       <div class="legend-row"><div class="swatch" style="background:#66ff99;"></div> excitatory</div>
       <div class="legend-row"><div class="swatch" style="background:#ff5252;"></div> inhibitory</div>
       <div class="legend-row"><div class="swatch" style="background:#ffd54f;"></div> dopamine halo</div>
+    </div>
+
+    <div id="hud-charts">
+      <div>
+        <div class="chart-header">
+          <h2>RASTER PLOT</h2>
+          <select id="raster-select"></select>
+        </div>
+        <canvas id="raster-canvas"></canvas>
+      </div>
+      <div>
+        <h2>FIRING RATE (Hz)</h2>
+        <canvas id="rate-canvas" width="240" height="90"></canvas>
+        <div id="rate-legend" class="rate-legend"></div>
+      </div>
+      <div>
+        <h2>TD-ERROR (dopamine RPE)</h2>
+        <canvas id="td-canvas" width="240" height="60"></canvas>
+      </div>
     </div>
 
     <div id="controls">

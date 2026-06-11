@@ -24,6 +24,7 @@ Run with::
 from __future__ import annotations
 
 import asyncio
+import math
 import mimetypes
 import threading
 import time
@@ -59,9 +60,29 @@ STREAM_FPS = 30.0
 STREAM_INTERVAL_S = 1.0 / STREAM_FPS
 # A region "spikes" (flash) when its mean firing rate crosses this, in Hz.
 SPIKE_FLASH_HZ = 25.0
+# Per-module spike sample size sent for the SPEC-010 raster plot HUD (one row
+# per entry; subsampled so the stream stays light at 30fps).
+RASTER_NEURONS = 64
+# Time constant (ms) for the TD-error HUD signal's decay back to 0 between
+# reward events -- mirrors DopamineSystem's default phasic-drive tau.
+TD_ERROR_TAU_MS = 50.0
 
 
 # -- Snapshot serialization -----------------------------------------------------
+
+
+def _subsample_spikes(spikes: np.ndarray, n: int) -> List[int]:
+    """Down/up-sample a spike mask to exactly ``n`` 0/1 entries for the raster."""
+    if spikes.size == 0:
+        return [0] * n
+    if spikes.size <= n:
+        idx = np.arange(spikes.size)
+    else:
+        idx = np.linspace(0, spikes.size - 1, n).astype(int)
+    sample = (spikes[idx] > 0).astype(int).tolist()
+    if len(sample) < n:
+        sample.extend([0] * (n - len(sample)))
+    return sample
 
 def serialize_layout() -> Dict[str, Any]:
     """Static scene description sent once per client connection."""
@@ -93,20 +114,24 @@ def serialize_frame(
     playing: bool,
     speed: float,
     isolated: Set[str],
+    td_error: float = 0.0,
 ) -> Dict[str, Any]:
     """Turn a :class:`BusSnapshot` into a compact JSON-ready frame.
 
-    Only per-region summaries are sent (mean/max firing rate, mean voltage, a
-    spike-flash flag) -- never the full per-neuron arrays -- to keep the stream
+    Per-region summaries (mean/max firing rate, mean voltage, a spike-flash
+    flag) plus a subsampled spike raster (:data:`RASTER_NEURONS` entries) for
+    the SPEC-010 HUD -- never the full per-neuron arrays -- to keep the stream
     light enough for 30fps over a localhost WebSocket.
     """
-    # A region flashes if it emitted any spikes this tick.
+    # A region flashes if it emitted any spikes this tick; also feeds the raster.
     spiked: Dict[str, bool] = {}
+    spike_arrays: Dict[str, np.ndarray] = {}
     for event in snapshot.events:
         if event.event_type != "module_output":
             continue
         outputs = event.payload
         spikes = np.asarray(getattr(outputs, "spike_trains", np.zeros(0)))
+        spike_arrays[event.source_module] = spikes
         spiked[event.source_module] = bool(spikes.size) and bool(spikes.any())
 
     regions: List[Dict[str, Any]] = []
@@ -127,6 +152,9 @@ def serialize_frame(
                 "mean_weight": round(float(state.mean_weight), 3),
                 "spike": bool(spiked.get(region_id, False)) or mean_hz >= SPIKE_FLASH_HZ,
                 "isolated": region_id in isolated,
+                "raster": _subsample_spikes(
+                    spike_arrays.get(region_id, np.zeros(0)), RASTER_NEURONS
+                ),
             }
         )
 
@@ -138,6 +166,7 @@ def serialize_frame(
         "dopamine": round(float(dopamine), 3),
         "noradrenaline": round(float(noradrenaline), 3),
         "acetylcholine": round(float(acetylcholine), 3),
+        "td_error": round(float(td_error), 4),
         "regions": regions,
     }
 
@@ -168,6 +197,8 @@ class SimulationRunner:
         self._lock = threading.Lock()
         self._latest: Optional[Dict[str, Any]] = None
         self._last_emit = 0.0
+        # TD-error HUD signal (SPEC-010): phasic on reward, decays toward 0.
+        self._last_td_error = 0.0
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -215,6 +246,7 @@ class SimulationRunner:
         elif cmd == "reset":
             self.playing = False
             self.engine.reset()
+            self._last_td_error = 0.0
             with self._lock:
                 self._step_requests = 0
 
@@ -231,9 +263,11 @@ class SimulationRunner:
         t_s = self.engine.current_time_ms / 1000.0
         self._neuromod.set_arousal(0.4 + 0.4 * float(np.sin(2.0 * np.pi * 0.15 * t_s)))
         self._neuromod.set_attention(0.5 + 0.3 * float(np.sin(2.0 * np.pi * 0.25 * t_s)))
+        # TD-error HUD signal: relaxes exponentially toward 0 between events.
+        self._last_td_error *= math.exp(-self.engine.DT_MS / TD_ERROR_TAU_MS)
         # A reward burst roughly once per simulated second.
         if int(self.engine.current_time_ms) % 1000 == 0:
-            self._neuromod.observe_reward(1.0, value_estimate=0.0)
+            self._last_td_error = self._neuromod.observe_reward(1.0, value_estimate=0.0)
 
     def _advance(self) -> BusSnapshot:
         """Drive neuromodulators and advance the engine one tick."""
@@ -293,6 +327,7 @@ class SimulationRunner:
             playing=self.playing,
             speed=self.speed,
             isolated=isolated,
+            td_error=self._last_td_error,
         )
         with self._lock:
             self._latest = frame
