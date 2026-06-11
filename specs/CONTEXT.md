@@ -6,8 +6,9 @@
 
 ## Status Atual
 **Fase:** 1 — Core (em progresso)
-**Próxima sessão:** SPEC-003 (LIF + STDP + Learning Engine)
-**Última atualização:** 2026-06-11 (SPEC-004 implementado fora de ordem — ver nota abaixo)
+**Próxima sessão:** SPEC-005 (Atenção)
+**Última atualização:** 2026-06-11 (SPEC-003 e SPEC-004 concluídos; SPEC-004
+implementado fora de ordem antes do SPEC-003 — ver nota abaixo)
 
 ---
 
@@ -56,6 +57,68 @@
     de ciclos, causalidade síncrona dentro do tick, cenário de aceitação de
     100ms com 3 módulos mock, StateRenderer não bloqueante, pause/resume,
     reset) — **100% pass** (34/34 com SPEC-001).
+- **SPEC-003 — LIF + STDP + Learning Engine (concluído 2026-06-11)**
+  - `core/neuron.py`: `LIFPopulation(CognitiveModule)` — população vetorizada
+    de 500–2000 neurônios LIF sobre Brian2 (`NeuronGroup` + `SpikeMonitor` +
+    `Network`/`Clock` próprios por instância, permitindo múltiplas populações
+    independentes). Parâmetros biológicos padrão SPEC-003
+    (`V_REST=-70mV, V_THRESH=-55mV, V_RESET=-70mV, TAU_M=20ms, T_REFRACT=2ms`).
+    `prefs.codegen.target = "numpy"` fixado (sem dependência de compilador
+    C++/CUDA — ADR-001). Passo de integração interno `0.1ms` (vs. dt=1ms do
+    BrainBus). `update()` combina corrente externa
+    (`set_input_current`), drive pré-sináptico (`spike_trains` somados ×
+    `input_gain`) e ganho atencional (`attention_signal` × ganho de
+    acetilcolina). `apply_neuromodulation`: noradrenalina desloca o limiar de
+    disparo, acetilcolina escala o ganho atencional. `_compute_firing_rate`
+    usa uma janela deslizante (`rate_window_ms`, padrão 100ms) sobre as
+    *contagens* de disparos por neurônio (não apenas um booleano), para que
+    `update()` com `dt` grande (ex.: validação científica) reporte taxas
+    corretas mesmo com múltiplos disparos por neurônio no intervalo.
+  - `core/synapse.py`: `STDPSynapse` — sinapse STDP vetorizada (NumPy puro,
+    não é `CognitiveModule` — mutada in-place via `SynapticTarget.weight_matrix`
+    por `LearningEngine`, conforme ADR-008). Regra par-a-par baseada em traços
+    (`trace_pre`/`trace_post`) com `A_PLUS=0.01, A_MINUS=0.0105,
+    TAU_PLUS=TAU_MINUS=20ms`; pesos clampados em `[w_min, w_max]`;
+    `lr_scale` permite congelar/escalar a plasticidade; `reset()` restaura
+    pesos iniciais e zera traços.
+  - `core/learning_engine.py`: `LearningEngine(CognitiveModule)` +
+    `PlasticityScheduler`. `register_projection(synapse, source_module,
+    target_module)` registra projeções STDP; `update()` divide
+    `inputs.spike_trains` por projeção (seguindo a ordem de inserção, que
+    deve casar com `depends_on` no `SimulationEngine`/`_build_inputs`),
+    aplica STDP apenas quando `PlasticityScheduler.is_plastic()` (gate por
+    acetilcolina, threshold padrão 0.3). TD-Learning (`compute_td_error`,
+    `apply_td_update`): `delta = reward + gamma*value_next - value_estimate`,
+    `TD_ALPHA=0.1, TD_GAMMA=0.95`, taxa de aprendizado escalada por dopamina
+    (`PlasticityScheduler.learning_rate_scale`, `max(0, dopamine)`).
+  - `core/__init__.py`: reexporta `LIFPopulation`, `STDPSynapse`,
+    `LearningEngine`, `PlasticityScheduler`.
+  - **Validação científica (Brian2 como oracle)** —
+    `tests/scientific/test_lif_validation.py`:
+    - Firing rate de população LIF sob corrente fisiológica (20mV, acima do
+      reobase de 15mV) cai em ~10–100Hz (Adrian 1926) — `dt=1000ms` num único
+      `update()` para amortizar o overhead fixo (~70ms) de cada `net.run()`.
+    - Lei do tudo-ou-nada: spike trains binários, voltagem sempre em
+      `[V_RESET, V_THRESH]`, taxa de disparo cresce com a corrente mas a
+      *forma* da resposta não muda.
+    - STDP (`STDPSynapse`) validado contra um oráculo Brian2
+      `Synapses`/`SpikeGeneratorGroup` com a mesma regra de traços
+      (`A_PLUS/A_MINUS/TAU_PLUS/TAU_MINUS`): pré-antes-pós → LTP,
+      pós-antes-pré → LTD, magnitude decai com `|Δt|` (Bi & Poo 1998),
+      concordância de sinal e magnitude (`abs=2e-3`).
+    - TD-error positivo quando `reward > value_estimate`, zero quando casam
+      (Schultz 1997).
+  - `tests/unit/test_neuron.py` (13), `tests/unit/test_synapse.py` (7),
+    `tests/unit/test_learning_engine.py` (13) — contrato `CognitiveModule`,
+    plasticidade, neuromodulação, reset.
+  - **Suite completa: 79/79 testes passam** (`pytest tests/ -q`), incluindo
+    11 testes científicos em `tests/scientific/test_lif_validation.py`.
+  - **Nota não-bloqueante:** `pip install brian2` atualizou numpy para 2.4.6,
+    gerando um `UserWarning` do scipy (`numpy<2.3,>=1.22.4 required`) — não
+    afeta os testes, mas vale revisitar se `scipy`/`tensorflow-intel` forem
+    usados diretamente em SPECs futuros.
+  - `core/interfaces.py`, `core/brain_bus.py` e `core/simulation_engine.py`
+    não foram alterados.
 
 - **SPEC-004 — Memória (concluído 2026-06-11, fora de ordem)**
   - `modules/memory/working.py`: `WorkingMemory` — rede recorrente de
@@ -97,16 +160,15 @@
     integração via `SimulationEngine.add_module()`.
 
 ## O que está em progresso
-- Nada em progresso (SPEC-002 e SPEC-004 fechados; aguardando início do SPEC-003)
+- Nada em progresso (SPEC-002, 003 e 004 fechados; aguardando início do SPEC-005)
 
 ## O que vem a seguir
-1. **SPEC-003:** `core/neuron.py` (LIF vetorizado, Brian2), `core/synapse.py`
-   (STDP), `core/learning_engine.py` (TD-Learning + PlasticityScheduler).
-   Implementar como `CognitiveModule`s plugados no `SimulationEngine` via
-   `add_module()` — **não alterar `core/interfaces.py` nem
-   `core/brain_bus.py`/`core/simulation_engine.py` sem necessidade**.
-   Após SPEC-003, validar integração dos módulos de memória (SPEC-004)
-   no `SimulationEngine`.
+1. **SPEC-005:** Atenção (Dorsal Attention Network) — implementar como
+   `CognitiveModule` plugado via `add_module()`.
+2. **Pendência (não-bloqueante):** validar a integração dos módulos de
+   memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
+   (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
+   memória ainda foram testados isoladamente, em `numpy` puro.
 
 ---
 
@@ -157,9 +219,14 @@ dt=1ms, StateRenderer não bloqueante, pause/resume/reset). 21 testes novos,
 34/34 no total. `core/interfaces.py` não foi alterado.
 
 ### SPEC-003 — LIF + STDP + Learning
-**Status:** 🔜 Próxima (SPEC-002 concluído)
+**Status:** ✅ Concluído (2026-06-11)
 **Branch:** —
-**Notas:** —
+**Notas:** `LIFPopulation` (Brian2, numpy backend, 500-2000 neurônios),
+`STDPSynapse` (traços, Bi & Poo 1998), `LearningEngine` + `PlasticityScheduler`
+(TD-Learning, gate por acetilcolina, escala por dopamina). Validado contra
+oráculo Brian2 (firing rate 10-100Hz, STDP assimétrico, TD-error). 79/79
+testes passam. `core/interfaces.py`/`brain_bus.py`/`simulation_engine.py`
+não alterados.
 
 ### SPEC-004 — Memória
 **Status:** ✅ Concluído (2026-06-11, fora de ordem — ver nota em "O que foi feito")
