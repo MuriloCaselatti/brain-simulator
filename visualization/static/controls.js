@@ -3,7 +3,7 @@
 // Opens the bidirectional WebSocket: inbound `layout`/`frame` messages drive the
 // scene; the play/pause/step/speed/isolate/reset controls send commands back.
 
-export function setupControls(scene) {
+export function setupControls(scene, chartHud) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const url = `${proto}://${location.host}/ws`;
   let ws = null;
@@ -34,8 +34,10 @@ export function setupControls(scene) {
       const msg = JSON.parse(event.data);
       if (msg.type === "layout") {
         scene.build(msg);
+        chartHud?.build(msg);
       } else if (msg.type === "frame") {
         scene.applyFrame(msg);
+        chartHud?.applyFrame(msg);
         updateHud(msg);
       }
     };

@@ -6,8 +6,8 @@
 
 ## Status Atual
 **Fase:** 4 — Visualização (em progresso)
-**Próxima sessão:** SPEC-010 (Dashboard Científico) ou SPEC-012 (Instrumentação)
-**Última atualização:** 2026-06-11 (SPEC-009 concluído)
+**Próxima sessão:** SPEC-012 (Instrumentação + Replay) ou SPEC-011 (Linguagem)
+**Última atualização:** 2026-06-11 (SPEC-010 concluído)
 
 ---
 
@@ -395,15 +395,51 @@
   - **Suite completa: 206/206 testes passam** (`pytest tests/ -q`).
   - `core/` intacto (contrato congelado; nenhuma alteração no engine/bus).
 
+- **SPEC-010 — Dashboard Científico (concluído 2026-06-11)**
+  - `visualization/server.py`: `RASTER_NEURONS = 64` e `TD_ERROR_TAU_MS = 50.0`
+    (mesmo tau do `DopamineSystem`). `_subsample_spikes(spikes, n)` reduz/expande
+    a máscara de spikes de cada região para exatamente `n` entradas 0/1 (raster
+    leve a 30fps). `serialize_frame()` ganhou `td_error: float` (kw-only) e cada
+    região no payload ganhou `"raster": [0/1]*RASTER_NEURONS`. `SimulationRunner`
+    mantém `_last_td_error` (decai exponencialmente em `_drive_neuromodulators`,
+    recebe o retorno de `observe_reward()` no burst de recompensa ~1x/s);
+    `reset` zera `_last_td_error`.
+  - `visualization/static/charts.js` (novo): `RasterPlot` (canvas 2D,
+    `getImageData`/`putImageData` para scroll horizontal de colunas de spikes) e
+    `LineChart` genérico (múltiplas séries, auto-scale de eixo Y com padding 15%
+    ou `yMin`/`yMax` fixos, grid, linha de zero opcional).
+  - `visualization/static/hud.js` (novo): `class Hud` — monta o seletor de
+    módulo (`#raster-select`), legenda de cores (`#rate-legend`), e instancia
+    `RasterPlot` (módulo selecionado) + `LineChart` para firing rate (8 séries,
+    `yMax=60Hz`) + `LineChart` para TD-error (1 série, zero-line). `applyFrame()`
+    deduplica por `timestamp_ms` (ignora frames repetidos durante pause) e detecta
+    reset (`timestamp_ms` menor que o anterior) para limpar os 3 charts —
+    satisfaz o critério "pause/resume/replay sem corrupção visual".
+  - `visualization/static/index.html`: painel flutuante `#hud-charts`
+    (`top:300px; right:16px`, abaixo do `#legend`) com raster plot + seletor,
+    firing rate (linha por módulo) e TD-error.
+  - `visualization/static/controls.js`: parâmetro renomeado `hud` → `chartHud`
+    (colidia com o objeto local `hud` de stats de texto pré-existente — causava
+    `SyntaxError` que quebrava o módulo inteiro e impedia a cena 3D/WebSocket de
+    inicializar). `brain_scene.js` agora instancia `new Hud()` e passa para
+    `setupControls(scene, hud)`.
+  - `tests/unit/test_visualization.py`: 2 testes novos
+    (`test_runner_drives_td_error_signal`, `test_runner_reset_clears_td_error`)
+    + asserções de `raster`/`td_error` em `test_serialize_frame_is_json_safe_and_complete`.
+    **208/208 testes passam** (`pytest tests/ -q`).
+  - Verificado no browser via preview: status "connected", 8 regiões no
+    seletor, raster/firing-rate/TD-error desenhando ao vivo, TD-error com picos
+    periódicos (~1/s) decaindo, pause mantém estado, reset+step limpa os 3
+    charts corretamente. `core/` intacto.
+
 ## O que está em progresso
-- Nada em progresso (SPEC-002 a 009 fechados; aguardando SPEC-010/012)
+- Nada em progresso (SPEC-002 a 010 fechados; aguardando SPEC-011/012)
 
 ## O que vem a seguir
-1. **SPEC-010:** Dashboard Científico (depende de SPEC-009, ✅ pronto) — raster
-   plots, firing rate, pesos, TD-error em overlay HUD sobre a cena 3D. Estender
-   `serialize_frame`/WS com séries temporais por módulo. **SPEC-012:**
-   Instrumentação + Replay (depende de SPEC-002). Base de conhecimento/skills 3D
-   em `docs/knowledge/` e `docs/skills/` (threejs-webgl, react-three-fiber, etc.).
+1. **SPEC-012:** Instrumentação + Replay (depende de SPEC-002, ✅ pronto).
+   **SPEC-011:** Módulo de Linguagem (depende de SPEC-004, ✅ pronto; exige
+   chave da Claude API). Base de conhecimento/skills 3D em `docs/knowledge/` e
+   `docs/skills/` (threejs-webgl, react-three-fiber, etc.).
 2. **Pendência (não-bloqueante):** validar a integração dos módulos de
    memória (SPEC-004) com `LIFPopulation`/`STDPSynapse`/`LearningEngine`
    (SPEC-003) via `SimulationEngine.add_module()` — os três módulos de
@@ -551,9 +587,19 @@ servidor agora força `mimetypes.add_type("text/javascript", ".js"/".mjs")` no
 startup. **Pendência leve:** FPS≥25 a verificar no browser do hardware-alvo.
 
 ### SPEC-010 — Dashboard Científico
-**Status:** ⏳ Aguarda SPEC-009
-**Branch:** —
-**Notas:** —
+**Status:** ✅ Concluído (2026-06-11)
+**Branch:** `claude/ecstatic-mclaren-853bad`
+**Notas:** HUD canvas2D sobre a cena 3D (`static/charts.js` + `static/hud.js`):
+`RasterPlot` (scroll de spikes via `getImageData`/`putImageData`, 64 neurônios
+subamostrados por região) e `LineChart` genérico (firing rate por módulo,
+TD-error com zero-line). `serialize_frame` ganhou `raster`/`td_error` por
+região; `SimulationRunner._last_td_error` decai com `tau=50ms` (igual ao
+`DopamineSystem`) e recebe burst de `observe_reward()` ~1x/s. Dedup por
+`timestamp_ms` + detecção de reset (timestamp menor) limpam os charts sem
+corrupção visual. **Fix colateral:** `controls.js` tinha colisão de identificador
+`hud` (parâmetro novo vs. objeto local de stats) que quebrava o módulo inteiro
+via `SyntaxError` — renomeado para `chartHud`. 2 testes novos, 208/208 no total.
+Verificado end-to-end no browser (preview).
 
 ### SPEC-011 — Módulo de Linguagem
 **Status:** ⏳ Aguarda SPEC-004
