@@ -13,6 +13,9 @@ from core.interfaces import (
 )
 from core.brain_bus import BrainBus, BusEvent, BusSnapshot
 from core.simulation_engine import SimulationEngine
+from core.neuron import LIFPopulation
+from core.synapse import STDPSynapse
+from core.learning_engine import LearningEngine, PlasticityScheduler
 
 __all__ = [
     "INTERFACE_VERSION",
@@ -26,4 +29,8 @@ __all__ = [
     "BusEvent",
     "BusSnapshot",
     "SimulationEngine",
+    "LIFPopulation",
+    "STDPSynapse",
+    "LearningEngine",
+    "PlasticityScheduler",
 ]
